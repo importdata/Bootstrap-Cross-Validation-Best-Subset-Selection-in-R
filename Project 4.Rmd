@@ -1,0 +1,513 @@
+---
+output:
+  pdf_document: default
+---
+
+
+<!-- Mini Project 4 - Bootstrap, LDA, QDA, Linear Regression, KNN, Best-Subset Selection -->
+<!-- Name: Jaemin Lee -->
+<!-- NetID: JXL142430 -->
+
+########## Question 1 ##########
+
+```{r, include = FALSE}
+GPA = read.csv("C:/Users/jaemi/Desktop/STAT 4360/Projects/Project 4/gpa.csv")
+str(GPA)
+
+```
+
+```{r echo=FALSE}
+### (a) scatter plot
+plot(GPA$act, GPA$gpa)
+#library(PerformanceAnalytics)  
+#chart.Correlation(GPA)
+  # looks like there's a positive linear relationship between gpa and act
+  # strong associated between gpa nad act (higher gpa = higher act)
+```
+(a) Based on the scatter plot, it seems like there's a positive linear relationship between gpa and act. There is a strong association between gpa nad act (i.e, higher gpa and higher act score)
+
+```{r, include = FALSE}
+### (b) 
+# parameter of interest: p - population correlation between gpa and act
+
+#cor.fn <- function(x, indices) {
+#  result <- cor(gpa$gpa, gpa$act)
+#  return(result)
+#}
+
+cor.fn <- function(x, indices) {
+  result <- cor(x[indices, "gpa"], x[indices, "act"])
+  return(result)
+}
+
+# point estimate of p
+cor.fn(GPA, 1:nrow(GPA)) # 0.27
+cor(GPA$gpa, GPA$act) # 0.27 
+                      # notice these two match
+```
+
+
+```{r, include=FALSE}
+# perform bootstrap
+library(boot)
+
+# point estimate of p
+library(MASS)
+set.seed(1)
+cor.boot <- boot(data = GPA, statistic = cor.fn, R = 1000)
+cor.boot
+```
+
+```{r echo=FALSE}
+# See the bootstrap distribution of correlation estimate
+plot(cor.boot)
+```
+
+```{r, include = FALSE}
+# Get a 95% confidence interval for correlation
+boot.ci(cor.boot, type = "perc")
+```
+(B) A point estimate of p is 0.27, bootstrap estimates of bias is 0.007800885, bootstrap estimates of standard error is 0.1072831, and 95% confidence interval is (0.0728, 0.4917). 
+```{r}
+### (c)
+# fit lm
+gpa.lm = lm(gpa ~ act, data = GPA); summary(gpa.lm)$coefficients
+  #              Estimate Std. Error  t value     Pr(>|t|)
+  #(Intercept) 2.11404929 0.32089483 6.587982 1.304450e-09
+  #act         0.03882713 0.01277302 3.039777 2.916604e-03
+
+# 95% CI of coefficeints ????????????????
+confint(gpa.lm, level= 0.95)
+  #2.5 %     97.5 %
+  #(Intercept) 1.47859015 2.74950842
+  #act         0.01353307 0.06412118
+  # conf int for coef of ACT
+```
+
+```{r}
+# Linear Regression Assumptions and Diagnostics
+par(mfrow = c(2, 2))
+plot(gpa.lm)
+
+
+```
+```{r}
+# d)
+# applying bootstrap to LM
+#fit.fn <- function(data, index) {
+#	result <- coef(lm(gpa ~ act, data = GPA, subset = index))
+#	return(result)
+#}
+
+fit.fn <- function(data, index) {
+	result <- coef(lm(data[index, "gpa"] ~ data[index, "act"]))
+	return(result)
+}
+
+n = nrow(GPA)
+
+fit.fn(GPA, 1:n)
+
+# Estimates and SEs from LM fit
+summary(lm(gpa ~ act, data = GPA))$coef
+
+
+# perform bootstrap on LM
+set.seed(1)
+lm.boot = boot(data = GPA, statistic = fit.fn, R = 1000)
+lm.boot
+names(lm.boot)
+sum(is.na(lm.boot$t))
+
+  # LM makes an assumption that the error terms for each observations are uncorrelated with common variance
+  # Then we estimate var using RSS. 
+  # However, bootstrap doesn't rely on any assumptions. thus, it is more likely to give a more accurate estimates of SEs
+  #### normality !!!!!!!!
+boot.ci(lm.boot, conf = 0.95, index = 2, type = 'perc')
+```
+
+```{r}
+############ Question 2 ###########
+library(ISLR)
+?OJ
+# The data contains 1070 purchases where the customer either purchased Citrus Hill or Minute Maid Orange Juice. A number of characteristics of the customer and product are recorded.
+
+# a)
+# extract certain predictors
+library(dplyr)
+# extracting variables
+OJ = OJ[,c(1, 3, 4, 5, 6, 7, 10)]
+head(OJ)
+str(OJ)
+
+# let "1" indicate MM (Minute Maid) and "0" indicate CH (Citrus Hill).
+old.purchase = c('CH', 'MM')
+new.purchase = factor(c('0', '1'))
+OJ$Purchase = new.purchase[match(OJ$Purchase, old.purchase)]
+
+# recode StoreID as a categorical variable
+old.ID = c("1", "2", "3", "4", "7")
+new.ID = factor(c("1", "2", "3", "4", "7"))
+OJ$StoreID = new.ID[match(OJ$StoreID, old.ID)]
+str(OJ)
+```
+
+
+```{r}
+# b)
+# perform LDA 
+# all data are used as training data
+library(MASS)
+
+# K-folds on LDA
+
+library(crossval)
+
+# classification examples
+# set up lda prediction function
+predfun.lda = function(train.x, train.y, test.x, test.y, negative)
+{
+  require(MASS) # for lda function
+  lda.fit = lda(train.y ~., data = train.x)
+  ynew = predict(lda.fit, test.x)$class
+  
+  # count TP, FP etc.
+  out = confusionMatrix(test.y, ynew, negative=negative)
+  return(out)
+}
+
+na.omit(OJ)
+X = OJ[, 2:7] # predictors
+head(X)
+Y = (OJ[,1]) # response
+head(Y)
+
+set.seed(1)
+cv.lda = crossval(predfun.lda, X, Y, K=10, B=1, negative = '1')
+cv.lda$stat
+
+diagnosticErrors(cv.lda$stat)
+
+######################################
+
+```
+
+```{r}
+# c)
+# perform QDA
+# K= 10 fold validation on lda
+library(crossval)
+
+# classification examples
+# set up lda prediction function
+predfun.qda = function(train.x, train.y, test.x, test.y, negative)
+{
+  require(MASS) # for lda function
+  qda.fit = qda(train.y ~., data = train.x)
+  ynew = predict(qda.fit, test.x)$class
+  
+  # count TP, FP etc.
+  out = confusionMatrix(test.y, ynew, negative=negative)
+  return(out)
+}
+
+na.omit(OJ)
+X = OJ[, 2:7] # predictors
+head(X)
+Y = (OJ[,1]) # response
+head(Y)
+
+set.seed(1)
+cv.qda = crossval(predfun.qda, X, Y, K=10, B=1, negative = '1')
+cv.qda$stat
+
+diagnosticErrors(cv.qda$stat)
+
+```
+```{r}
+# d)
+
+# perform KNN with k chosen optimally using 10-fold cross validation
+
+library(class)
+library(caret)
+library(KODAMA)
+
+data=OJ[,-1]
+labels=OJ[,1]
+pp=knn.double.cv(data,labels)
+print(pp$Q2Y)
+table(pp$Ypred,labels)
+
+
+set.seed(1)
+trControl <- trainControl(method  = "cv", number  = 10)
+fit <- train(Purchase ~ ., method = "knn", tuneGrid = expand.grid(k = 1:20), 
+             trControl= trControl, metric = "Accuracy", data = OJ)
+fit
+plot(fit)
+knnPredict = predict(fit, newdata = testing)
+confusionMatrix(knnPredict, testing$Purchase)
+
+old.purchase = c('CH', 'MM')
+new.purchase = as.factor(c('0', '1'))
+OJ$Purchase = new.purchase[match(OJ$Purchase, old.purchase)]
+
+# recode StoreID as a categorical variable
+old.ID = c("1", "2", "3", "4", "7")
+new.ID = as.factor(c("1", "2", "3", "4", "7"))
+OJ$StoreID = new.ID[match(OJ$StoreID, old.ID)]
+str(OJ)
+str(X)
+str(Y)
+
+
+n = nrow(OJ)
+set.seed(1)
+library(class)
+
+# using 10-folds
+f = ceiling(n/10)
+s = sample(rep(1:10, f), n)  
+
+CV=NULL;error.rate=NULL
+
+for (i in 1:10) { 
+  test.index = seq_len(n)[(s == i)] # test data
+  train.index= seq_len(n)[(s != i)] # training data
+}
+
+library(caret)
+train.control <- trainControl(method  = "cv")
+
+as.numeric.factor = function(x) {
+  as.numeric(levels(x))[x]
+}
+
+OJ$StoreID = as.numeric.factor(OJ$StoreID)
+str(OJ)
+
+set.seed(2)
+knn.fit <- train(Purchase~ .,
+             method     = "knn",
+             tuneLength = 15,
+             trControl  = train.control,
+             metric     = "Accuracy",
+             data       = OJ)
+knn.fit # optimal K = 11
+knn.fit
+plot(knn.fit, cex = 2, pch =20) # 0.821 accuracy rate
+
+library(KODAMA)
+knn.cv = knn.double.cv(OJ[,-1], OJ[,1], compmax = 11)
+print(min(knn.cv$Q2Y))
+print(which.min(knn.cv$Q2Y))
+table(knn.cv$Ypred, OJ[,1])
+
+
+```
+
+```{r}
+# (e) using logistic regression
+predfun.lr = function(train.x, train.y, test.x, test.y, negative)
+{
+  lr.fit = glm(train.y ~., family = binomial, data = train.x)
+  lr.prob = predict(lr.fit, test.x, type = "response")
+  lr.pred = ifelse(lr.prob >= 0.5, "1", "0")
+  
+  # count TP, FP etc.
+  out = confusionMatrix(test.y, lr.pred, negative=negative)
+  return(out)
+}
+
+na.omit(OJ)
+X = OJ[, 2:7] # predictors
+head(X)
+Y = (OJ[,1]) # response
+head(Y)
+
+set.seed(1)
+cv.lr = crossval(predfun.lr, X, Y, K=10, B=1, negative = '1')
+cv.lr$stat
+
+diagnosticErrors(cv.lr$stat)
+
+```
+```{r}
+# f)
+# comparing restuls from b)-e)
+err.lda = 1-diagnosticErrors(cv.lda$stat)[1]; print(err.lda) # 0.17
+err.qda = 1-diagnosticErrors(cv.qda$stat)[1]; print(err.qda) # 0.19
+err.lr = 1-diagnosticErrors(cv.lr$stat)[1]; print(err.lr) # 0.166
+
+
+```
+
+```{r}
+############## Question 3 #############
+# a) Exploratory anlaysis
+library(ISLR)
+Auto
+str(Auto)
+
+
+# Take mpg as response and the remaining variables (except name) as predictors.
+Auto = Auto[,-9]
+str(Auto)
+
+# check if there are any missing values
+sum(is.na(Auto)) # no missing values
+plot(Auto)
+  # looks like mpg, cylinders, dispacement, horsepower, weight, acceleration have associations
+summary(Auto) # get the hang of the data set 
+```
+```{r}
+# b) multiple linear regression using the least square method
+lm.fit = lm(mpg ~ . , data = Auto)
+summary(lm.fit)
+
+# mpg = -17.218435 + (-0.493376 * cylinders) + (0.019896 * displacement) + (-0.016951 * horsepower) + (-0.006474 * weight) + (0.080576 * acceleration) + (0.750773 * year) + (1.426140 * origin)  
+
+```
+```{r}
+# c) use best-subset selection to find the best model
+library(leaps)
+
+# Total number of predictors in the data
+totpred = ncol(Auto) - 1; totpred
+
+# full model
+fit.full = regsubsets(mpg ~ ., data = Auto, nvmax = totpred)
+fit.summary = summary(fit.full);fit.summary
+
+names(fit.summary)
+
+# check R^2
+fit.summary$rsq
+
+# check adjusted R^2
+max(fit.summary$adjr2)
+
+# Plot model fit measures for best model of each size against size
+par(mfrow = c(2, 2))
+
+# RSS
+plot(fit.summary$rss, xlab = "Number of Variables", ylab = "RSS", type = "l")
+which.min(fit.summary$rss) # 7
+points(7, fit.summary$rss[7], cex = 2, pch = 20)
+
+# Adjusted R^2
+plot(fit.summary$adjr2, xlab = "Number of Variables", ylab = "Adjusted RSq", type = "l")
+which.max(fit.summary$adjr2) # 6 
+points(6, fit.summary$adjr2[6], cex = 2, pch = 20)
+
+# CP
+plot(fit.summary$cp, xlab = "Number of Variables", ylab = "Cp", type = "l")
+which.min(fit.summary$cp) # 6
+points(6, fit.summary$cp[6], cex = 2, pch = 20)
+
+# BIC
+plot(fit.summary$bic, xlab = "Number of Variables", ylab = "BIC",	type = "l")
+which.min(fit.summary$bic) # 3
+points(3, fit.summary$bic[3], cex = 2, pch = 20)
+
+par(mfrow = c(1, 1))
+plot(fit.full, scale = "r2")
+plot(fit.full, scale = "adjr2")
+plot(fit.full, scale = "Cp")
+plot(fit.full, scale = "bic")
+
+# Get coefficients of best model for a given size
+coef(fit.full, 6)
+
+```
+
+```{r}
+# d) Forward stepwise selection
+fit.fwd = regsubsets(mpg ~ ., data = Auto, nvmax = totpred, method = "forward")
+fit.fwd.summary = summary(fit.fwd);fit.fwd.summary
+
+names(fit.fwd.summary)
+
+# check R^2
+fit.fwd.summary$rsq
+
+# check adjusted R^2
+fit.fwd.summary$adjr2
+
+# Plot model fit measures for best model of each size against size
+par(mfrow = c(2, 2))
+
+# RSS
+plot(fit.fwd.summary$rss, xlab = "Number of Variables", ylab = "RSS", type = "l")
+which.min(fit.fwd.summary$rss) # 7
+points(7, fit.fwd.summary$rss[7], cex = 2, pch = 20)
+
+# Adjusted R^2
+plot(fit.fwd.summary$adjr2, xlab = "Number of Variables", ylab = "Adjusted RSq", type = "l")
+which.max(fit.fwd.summary$adjr2) # 6 
+points(6, fit.fwd.summary$adjr2[6], cex = 2, pch = 20)
+
+# CP
+plot(fit.fwd.summary$cp, xlab = "Number of Variables", ylab = "Cp", type = "l")
+which.min(fit.fwd.summary$cp) # 6
+points(6, fit.fwd.summary$cp[6], cex = 2, pch = 20)
+
+# BIC
+plot(fit.fwd.summary$bic, xlab = "Number of Variables", ylab = "BIC",	type = "l")
+which.min(fit.fwd.summary$bic) # 3
+points(3, fit.fwd.summary$bic[3], cex = 2, pch = 20)
+
+par(mfrow = c(1,1))
+plot(fit.fwd, scale = "r2")
+plot(fit.fwd, scale = "adjr2")
+plot(fit.fwd, scale = "Cp")
+plot(fit.fwd, scale = "bic")
+
+
+
+```
+
+```{r}
+# e) Backward stepwise selection
+fit.bwd = regsubsets(mpg ~ ., data = Auto, nvmax = totpred, method = "backward")
+fit.bwd.summary = summary(fit.bwd);fit.bwd.summary
+
+names(fit.bwd.summary)
+
+# check R^2
+fit.bwd.summary$rsq
+
+# check adjusted R^2
+fit.bwd.summary$adjr2
+
+# Plot model fit measures for best model of each size against size
+par(mfrow = c(2, 2))
+
+# RSS
+plot(fit.bwd.summary$rss, xlab = "Number of Variables", ylab = "RSS", type = "l")
+which.min(fit.fwd.summary$rss) # 7
+points(7, fit.fwd.summary$rss[7], cex = 2, pch = 20)
+
+# Adjusted R^2
+plot(fit.bwd.summary$adjr2, xlab = "Number of Variables", ylab = "Adjusted RSq", type = "l")
+which.max(fit.bwd.summary$adjr2) # 6 
+points(6, fit.bwd.summary$adjr2[6], cex = 2, pch = 20)
+
+# CP
+plot(fit.bwd.summary$cp, xlab = "Number of Variables", ylab = "Cp", type = "l")
+which.min(fit.bwd.summary$cp) # 6
+points(6, fit.bwd.summary$cp[6], cex = 2, pch = 20)
+
+# BIC
+plot(fit.bwd.summary$bic, xlab = "Number of Variables", ylab = "BIC",	type = "l")
+which.min(fit.bwd.summary$bic) # 3
+points(3, fit.bwd.summary$bic[3], cex = 2, pch = 20)
+
+par(mfrow = c(1, 1))
+plot(fit.bwd, scale = "r2")
+plot(fit.bwd, scale = "adjr2")
+plot(fit.bwd, scale = "Cp")
+plot(fit.bwd, scale = "bic")
+```
+
